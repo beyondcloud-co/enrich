@@ -92,6 +92,9 @@ object EnrichmentManager {
                enriched.pii = pii.asString
              }
            }
+      _ <- registry.shreddedValidator
+             .map(_.performCheck(enriched, raw, processor, client))
+             .getOrElse(EitherT.rightT[F, BadRow](()))
     } yield enriched
 
   /**

@@ -115,6 +115,7 @@ object EnrichmentRegistry {
             registry <- er
           } yield registry.copy(apiRequest = enrichment.some)
         case c: PiiPseudonymizerConf => er.map(_.copy(piiPseudonymizer = c.enrichment.some))
+        case c: ShreddedValidatorEnrichmentConf => er.map(_.copy(shreddedValidator = c.enrichment.some))
         case c: SqlQueryConf =>
           for {
             enrichment <- EitherT.right(c.enrichment[F](blocker))
@@ -185,6 +186,8 @@ object EnrichmentRegistry {
                 IpLookupsEnrichment.parse(enrichmentConfig, schemaKey, localMode).map(_.some)
               else if (nm == "anon_ip")
                 AnonIpEnrichment.parse(enrichmentConfig, schemaKey).map(_.some)
+              else if (nm == "shredded_validator_config")
+                ShreddedValidatorEnrichment.parse(enrichmentConfig, schemaKey).map(_.some)
               else if (nm == "referer_parser")
                 RefererParserEnrichment.parse(enrichmentConfig, schemaKey, localMode).map(_.some)
               else if (nm == "campaign_attribution")
@@ -234,21 +237,22 @@ object EnrichmentRegistry {
 
 /** A registry to hold all of our enrichments. */
 final case class EnrichmentRegistry[F[_]](
-  apiRequest: Option[ApiRequestEnrichment[F]] = None,
-  piiPseudonymizer: Option[PiiPseudonymizerEnrichment] = None,
-  sqlQuery: Option[SqlQueryEnrichment[F]] = None,
-  anonIp: Option[AnonIpEnrichment] = None,
-  campaignAttribution: Option[CampaignAttributionEnrichment] = None,
-  cookieExtractor: Option[CookieExtractorEnrichment] = None,
-  currencyConversion: Option[CurrencyConversionEnrichment[F]] = None,
-  eventFingerprint: Option[EventFingerprintEnrichment] = None,
-  httpHeaderExtractor: Option[HttpHeaderExtractorEnrichment] = None,
-  iab: Option[IabEnrichment] = None,
-  ipLookups: Option[IpLookupsEnrichment[F]] = None,
-  javascriptScript: Option[JavascriptScriptEnrichment] = None,
-  refererParser: Option[RefererParserEnrichment] = None,
-  uaParser: Option[UaParserEnrichment] = None,
-  userAgentUtils: Option[UserAgentUtilsEnrichment] = None,
-  weather: Option[WeatherEnrichment[F]] = None,
-  yauaa: Option[YauaaEnrichment] = None
+                                           apiRequest: Option[ApiRequestEnrichment[F]] = None,
+                                           piiPseudonymizer: Option[PiiPseudonymizerEnrichment] = None,
+                                           shreddedValidator: Option[ShreddedValidatorEnrichment] = Some(ShreddedValidatorEnrichment()),
+                                           sqlQuery: Option[SqlQueryEnrichment[F]] = None,
+                                           anonIp: Option[AnonIpEnrichment] = None,
+                                           campaignAttribution: Option[CampaignAttributionEnrichment] = None,
+                                           cookieExtractor: Option[CookieExtractorEnrichment] = None,
+                                           currencyConversion: Option[CurrencyConversionEnrichment[F]] = None,
+                                           eventFingerprint: Option[EventFingerprintEnrichment] = None,
+                                           httpHeaderExtractor: Option[HttpHeaderExtractorEnrichment] = None,
+                                           iab: Option[IabEnrichment] = None,
+                                           ipLookups: Option[IpLookupsEnrichment[F]] = None,
+                                           javascriptScript: Option[JavascriptScriptEnrichment] = None,
+                                           refererParser: Option[RefererParserEnrichment] = None,
+                                           uaParser: Option[UaParserEnrichment] = None,
+                                           userAgentUtils: Option[UserAgentUtilsEnrichment] = None,
+                                           weather: Option[WeatherEnrichment[F]] = None,
+                                           yauaa: Option[YauaaEnrichment] = None
 )
