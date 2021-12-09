@@ -191,10 +191,6 @@ object EnrichmentConf {
     def enrichment: UserAgentUtilsEnrichment = UserAgentUtilsEnrichment(schemaKey)
   }
 
-  final case class ShreddedValidatorEnrichmentConf(schemaKey: SchemaKey, disable: Boolean) extends EnrichmentConf {
-    def enrichment: ShreddedValidatorEnrichment = ShreddedValidatorEnrichment(disable)
-  }
-
   final case class WeatherConf(
     schemaKey: SchemaKey,
     apiHost: String,

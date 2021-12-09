@@ -686,6 +686,28 @@ class EnrichmentManagerSpec extends Specification with EitherMatchers {
       EnrichmentManager.getCollectorVersionSet(input) must beRight(())
     }
   }
+
+  "output format validator" should {
+    "create BadRow on oversized fields" >> {
+      EnrichmentManager
+        .enrichEvent(
+          enrichmentReg,
+          client,
+          processor,
+          timestamp,
+          RawEvent(api, fatBody, None, source, context)
+        )
+        .map(_ => true)
+        .getOrElse(false) must beFalse
+    }
+
+    "allow normal raw events" >> {
+      EnrichmentManager
+        .enrichEvent(enrichmentReg, client, processor, timestamp, RawEvent(api, leanBody, None, source, context))
+        .map(_ => true)
+        .getOrElse(false) must beTrue
+    }
+  }
 }
 
 object EnrichmentManagerSpec {
@@ -705,6 +727,18 @@ object EnrichmentManagerSpec {
     Nil,
     None
   )
+
+  val leanBody = Map(
+    "e" -> "pp",
+    "tv" -> "js-0.13.1",
+    "p" -> "web"
+  ).toOpt
+
+  val fatBody = Map(
+    "e" -> "pp",
+    "tv" -> s"${"s" * 500}",
+    "p" -> "web"
+  ).toOpt
 
   val iabEnrichment = IabEnrichment
     .parse(
@@ -739,4 +773,5 @@ object EnrichmentManagerSpec {
     .getOrElse(throw new RuntimeException("IAB enrichment couldn't be initialised")) // to make sure it's not none
     .enrichment[Id]
     .some
+
 }

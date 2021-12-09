@@ -16,28 +16,24 @@ package enrichments
 import java.nio.charset.Charset
 import java.net.URI
 import java.time.Instant
-
 import org.joda.time.DateTime
-
 import io.circe.Json
-
 import cats.Monad
 import cats.data.{EitherT, NonEmptyList, OptionT, ValidatedNel}
 import cats.effect.Clock
 import cats.implicits._
-
 import com.snowplowanalytics.iglu.client.Client
 import com.snowplowanalytics.iglu.client.resolver.registries.RegistryLookup
-
-import com.snowplowanalytics.iglu.core.SelfDescribingData
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaVer, SelfDescribingData}
 import com.snowplowanalytics.iglu.core.circe.implicits._
-
 import com.snowplowanalytics.snowplow.badrows._
 import com.snowplowanalytics.snowplow.badrows.{FailureDetails, Payload, Processor}
-
 import com.snowplowanalytics.refererparser._
-
 import adapters.RawEvent
+import com.snowplowanalytics.snowplow.badrows.FailureDetails.{EnrichmentFailureMessage, EnrichmentInformation}
+import com.snowplowanalytics.snowplow.enrich.common.adapters.RawEvent.toRawEvent
+import com.snowplowanalytics.snowplow.enrich.common.outputs.EnrichedEvent.toPartiallyEnrichedEvent
+import com.snowplowanalytics.snowplow.enrich.common.utils.IgluUtils.buildSchemaViolationsBadRow
 import enrichments.{EventEnrichments => EE}
 import enrichments.{MiscEnrichments => ME}
 import enrichments.registry._
@@ -92,10 +88,52 @@ object EnrichmentManager {
                enriched.pii = pii.asString
              }
            }
-      _ <- registry.shreddedValidator
-             .map(_.performCheck(enriched, raw, processor, client))
-             .getOrElse(EitherT.rightT[F, BadRow](()))
+      _ <- validateEnriched(enriched, raw, processor, client)
     } yield enriched
+
+  private val atomicSchema: SchemaKey = SchemaKey("com.snowplowanalytics.snowplow", "atomic", "jsonschema", SchemaVer.Full(1, 0, 0))
+
+  private def validateEnriched[F[_]](
+    enriched: EnrichedEvent,
+    raw: RawEvent,
+    processor: Processor,
+    client: Client[F, Json]
+  )(
+    implicit
+    M: Monad[F],
+    L: RegistryLookup[F],
+    C: Clock[F]
+  ): EitherT[F, BadRow, Unit] =
+      enriched.toShreddedEvent
+        .leftMap(err =>
+          EnrichmentManager.buildEnrichmentFailuresBadRow(
+            NonEmptyList.one(
+              FailureDetails.EnrichmentFailure(Some(EnrichmentInformation(atomicSchema, identifier = "shredded_validator")),
+                                               EnrichmentFailureMessage.Simple(err.getMessage)
+              )
+            ),
+            toPartiallyEnrichedEvent(enriched),
+            toRawEvent(raw),
+            processor
+          )
+        )
+        .toEitherT[F]
+        .flatMap(shreded =>
+          client
+            .check(
+              SelfDescribingData(atomicSchema, shreded)
+            )
+            .leftMap(err =>
+              buildSchemaViolationsBadRow(
+                NonEmptyList.one(
+                  FailureDetails.SchemaViolation.IgluError(atomicSchema, err)
+                ),
+                toPartiallyEnrichedEvent(enriched),
+                toRawEvent(raw),
+                processor
+              )
+            )
+        )
 
   /**
    * Run all the enrichments and aggregate the errors if any
