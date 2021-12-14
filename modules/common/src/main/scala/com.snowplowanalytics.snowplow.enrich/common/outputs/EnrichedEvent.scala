@@ -266,7 +266,7 @@ class EnrichedEvent extends Serializable {
       )
     else Seq.empty[(String, Json)]
 
-  def toShreddedEvent: Either[Throwable, Json] =
+  def toAtomicEvent: Either[Throwable, Json] =
     Either.catchNonFatal(
       Json.fromFields(
         toKv("app_id", this.app_id) ++

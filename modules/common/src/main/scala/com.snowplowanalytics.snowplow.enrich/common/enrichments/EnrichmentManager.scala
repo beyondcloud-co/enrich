@@ -93,22 +93,17 @@ object EnrichmentManager {
 
   private val atomicSchema: SchemaKey = SchemaKey("com.snowplowanalytics.snowplow", "atomic", "jsonschema", SchemaVer.Full(1, 0, 0))
 
-  private def validateEnriched[F[_]](
+  private def validateEnriched[F[_]: Clock: Monad: RegistryLookup](
     enriched: EnrichedEvent,
     raw: RawEvent,
     processor: Processor,
     client: Client[F, Json]
-  )(
-    implicit
-    M: Monad[F],
-    L: RegistryLookup[F],
-    C: Clock[F]
   ): EitherT[F, BadRow, Unit] =
       enriched.toShreddedEvent
         .leftMap(err =>
           EnrichmentManager.buildEnrichmentFailuresBadRow(
             NonEmptyList.one(
-              FailureDetails.EnrichmentFailure(Some(EnrichmentInformation(atomicSchema, identifier = "shredded_validator")),
+              FailureDetails.EnrichmentFailure(Some(EnrichmentInformation(atomicSchema, identifier = "atomic_validator")),
                                                EnrichmentFailureMessage.Simple(err.getMessage)
               )
             ),
@@ -118,7 +113,7 @@ object EnrichmentManager {
           )
         )
         .toEitherT[F]
-        .flatMap(shreded =>
+        .flatMap(atomic =>
           client
             .check(
               SelfDescribingData(atomicSchema, shreded)
