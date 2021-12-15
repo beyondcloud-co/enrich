@@ -23,12 +23,7 @@ import com.snowplowanalytics.snowplow.badrows._
 import com.snowplowanalytics.iglu.core.{SchemaCriterion, SchemaKey, SchemaVer}
 import loaders._
 import adapters.RawEvent
-import com.snowplowanalytics.snowplow.enrich.common.enrichments.registry.pii.{
-  JsonMutators,
-  PiiJson,
-  PiiPseudonymizerEnrichment,
-  PiiStrategyPseudonymize
-}
+import com.snowplowanalytics.snowplow.enrich.common.enrichments.registry.pii.{JsonMutators, PiiJson, PiiPseudonymizerEnrichment, PiiStrategyPseudonymize}
 import com.snowplowanalytics.snowplow.enrich.common.outputs.EnrichedEvent
 import utils.Clock._
 import utils.ConversionUtils
@@ -36,8 +31,8 @@ import enrichments.registry.{IabEnrichment, JavascriptScriptEnrichment, YauaaEnr
 import org.apache.commons.codec.digest.DigestUtils
 import org.specs2.mutable.Specification
 import org.specs2.matcher.EitherMatchers
-
 import SpecHelpers._
+import com.snowplowanalytics.snowplow.badrows.FailureDetails.EnrichmentFailureMessage
 
 class EnrichmentManagerSpec extends Specification with EitherMatchers {
   import EnrichmentManagerSpec._
@@ -697,8 +692,15 @@ class EnrichmentManagerSpec extends Specification with EitherMatchers {
           timestamp,
           RawEvent(api, fatBody, None, source, context)
         )
-        .map(_ => true)
-        .getOrElse(false) must beFalse
+        .swap
+        .forall {
+          case BadRow.EnrichmentFailures(_, failure, _) => failure.messages.map(_.message match {
+            case EnrichmentFailureMessage.Simple(error) => error.startsWith("Enriched event output validation error ")
+            case EnrichmentFailureMessage.IgluError(schemaKey, _) => schemaKey == SchemaKey("com.snowplowanalytics.snowplow", "atomic", "jsonschema", SchemaVer.Full(1, 0, 0))
+            case _ => false
+          }).foldLeft(true)(_ && _)
+          case _ => false
+        } must beTrue
     }
 
     "allow normal raw events" >> {

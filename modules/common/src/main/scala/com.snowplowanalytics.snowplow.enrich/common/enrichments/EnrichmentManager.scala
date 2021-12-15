@@ -22,18 +22,18 @@ import cats.Monad
 import cats.data.{EitherT, NonEmptyList, OptionT, ValidatedNel}
 import cats.effect.Clock
 import cats.implicits._
+import adapters.RawEvent
+import outputs.EnrichedEvent
+import com.snowplowanalytics.refererparser._
 import com.snowplowanalytics.iglu.client.Client
 import com.snowplowanalytics.iglu.client.resolver.registries.RegistryLookup
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaVer, SelfDescribingData}
 import com.snowplowanalytics.iglu.core.circe.implicits._
 import com.snowplowanalytics.snowplow.badrows._
 import com.snowplowanalytics.snowplow.badrows.{FailureDetails, Payload, Processor}
-import com.snowplowanalytics.refererparser._
-import adapters.RawEvent
-import com.snowplowanalytics.snowplow.badrows.FailureDetails.{EnrichmentFailureMessage, EnrichmentInformation}
+import com.snowplowanalytics.snowplow.badrows.FailureDetails.EnrichmentFailure
 import com.snowplowanalytics.snowplow.enrich.common.adapters.RawEvent.toRawEvent
 import com.snowplowanalytics.snowplow.enrich.common.outputs.EnrichedEvent.toPartiallyEnrichedEvent
-import com.snowplowanalytics.snowplow.enrich.common.utils.IgluUtils.buildSchemaViolationsBadRow
 import enrichments.{EventEnrichments => EE}
 import enrichments.{MiscEnrichments => ME}
 import enrichments.registry._
@@ -41,7 +41,6 @@ import enrichments.registry.apirequest.ApiRequestEnrichment
 import enrichments.registry.pii.PiiPseudonymizerEnrichment
 import enrichments.registry.sqlquery.SqlQueryEnrichment
 import enrichments.web.{PageEnrichments => WPE}
-import outputs.EnrichedEvent
 import utils.{IgluUtils, ConversionUtils => CU}
 
 object EnrichmentManager {
@@ -93,42 +92,51 @@ object EnrichmentManager {
 
   private val atomicSchema: SchemaKey = SchemaKey("com.snowplowanalytics.snowplow", "atomic", "jsonschema", SchemaVer.Full(1, 0, 0))
 
+
   private def validateEnriched[F[_]: Clock: Monad: RegistryLookup](
     enriched: EnrichedEvent,
     raw: RawEvent,
     processor: Processor,
     client: Client[F, Json]
-  ): EitherT[F, BadRow, Unit] =
-      enriched.toShreddedEvent
-        .leftMap(err =>
-          EnrichmentManager.buildEnrichmentFailuresBadRow(
-            NonEmptyList.one(
-              FailureDetails.EnrichmentFailure(Some(EnrichmentInformation(atomicSchema, identifier = "atomic_validator")),
-                                               EnrichmentFailureMessage.Simple(err.getMessage)
+  ): EitherT[F, BadRow, Unit] = enriched.toAtomicEvent
+      .leftMap(err =>
+        EnrichmentManager.buildEnrichmentFailuresBadRow(
+          NonEmptyList(
+            EnrichmentFailure(
+              None,
+              FailureDetails.EnrichmentFailureMessage.Simple(
+                "Critical error during conversion of enriched event to the shredded format"
               )
             ),
-            toPartiallyEnrichedEvent(enriched),
-            toRawEvent(raw),
-            processor
-          )
+            List(EnrichmentFailure(None, FailureDetails.EnrichmentFailureMessage.Simple(err.getMessage)))
+          ),
+          toPartiallyEnrichedEvent(enriched),
+          toRawEvent(raw),
+          processor
         )
-        .toEitherT[F]
-        .flatMap(atomic =>
-          client
-            .check(
-              SelfDescribingData(atomicSchema, shreded)
-            )
-            .leftMap(err =>
-              buildSchemaViolationsBadRow(
-                NonEmptyList.one(
-                  FailureDetails.SchemaViolation.IgluError(atomicSchema, err)
+      )
+      .toEitherT[F]
+      .flatMap(atomic =>
+        client
+          .check(SelfDescribingData(atomicSchema, atomic))
+          .leftMap(err =>
+            EnrichmentManager.buildEnrichmentFailuresBadRow(
+              NonEmptyList(
+                EnrichmentFailure(
+                  None,
+                  FailureDetails.EnrichmentFailureMessage.Simple(
+                    s"Enriched event output validation error against the ${atomicSchema.toSchemaUri}. In most cases" +
+                      " it would be because of oversized fields."
+                  )
                 ),
-                toPartiallyEnrichedEvent(enriched),
-                toRawEvent(raw),
-                processor
-              )
+                List(EnrichmentFailure(None, FailureDetails.EnrichmentFailureMessage.IgluError(atomicSchema, err)))
+              ),
+              toPartiallyEnrichedEvent(enriched),
+              toRawEvent(raw),
+              processor
             )
-        )
+      )
+      )
 
   /**
    * Run all the enrichments and aggregate the errors if any
