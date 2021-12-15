@@ -23,7 +23,12 @@ import com.snowplowanalytics.snowplow.badrows._
 import com.snowplowanalytics.iglu.core.{SchemaCriterion, SchemaKey, SchemaVer}
 import loaders._
 import adapters.RawEvent
-import com.snowplowanalytics.snowplow.enrich.common.enrichments.registry.pii.{JsonMutators, PiiJson, PiiPseudonymizerEnrichment, PiiStrategyPseudonymize}
+import com.snowplowanalytics.snowplow.enrich.common.enrichments.registry.pii.{
+  JsonMutators,
+  PiiJson,
+  PiiPseudonymizerEnrichment,
+  PiiStrategyPseudonymize
+}
 import com.snowplowanalytics.snowplow.enrich.common.outputs.EnrichedEvent
 import utils.Clock._
 import utils.ConversionUtils
@@ -693,14 +698,19 @@ class EnrichmentManagerSpec extends Specification with EitherMatchers {
           RawEvent(api, fatBody, None, source, context)
         )
         .swap
-        .forall {
-          case BadRow.EnrichmentFailures(_, failure, _) => failure.messages.map(_.message match {
-            case EnrichmentFailureMessage.Simple(error) => error.startsWith("Enriched event output validation error ")
-            case EnrichmentFailureMessage.IgluError(schemaKey, _) => schemaKey == SchemaKey("com.snowplowanalytics.snowplow", "atomic", "jsonschema", SchemaVer.Full(1, 0, 0))
-            case _ => false
-          }).foldLeft(true)(_ && _)
-          case _ => false
-        } must beTrue
+        .map {
+          case BadRow.EnrichmentFailures(_, failure, _) =>
+            failure.messages.map(_.message match {
+              case EnrichmentFailureMessage.Simple(error) => error
+              case EnrichmentFailureMessage.IgluError(schemaKey, _) => schemaKey
+              case _ => None
+            })
+          case _ => None
+        }
+        .getOrElse(None) === NonEmptyList(
+        s"Enriched event output validation error against the ${atomicSchema.toSchemaUri}.",
+        List(atomicSchema)
+      )
     }
 
     "allow normal raw events" >> {
@@ -718,6 +728,7 @@ object EnrichmentManagerSpec {
   val client = SpecHelpers.client
   val processor = Processor("ssc-tests", "0.0.0")
   val timestamp = DateTime.now()
+  val atomicSchema = SchemaKey("com.snowplowanalytics.snowplow", "atomic", "jsonschema", SchemaVer.Full(1, 0, 0))
 
   val api = CollectorPayload.Api("com.snowplowanalytics.snowplow", "tp2")
   val source = CollectorPayload.Source("clj-tomcat", "UTF-8", None)

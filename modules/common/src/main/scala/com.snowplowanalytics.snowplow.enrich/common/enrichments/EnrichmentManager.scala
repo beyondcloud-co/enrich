@@ -105,7 +105,7 @@ object EnrichmentManager {
             EnrichmentFailure(
               None,
               FailureDetails.EnrichmentFailureMessage.Simple(
-                "Critical error during conversion of enriched event to the shredded format"
+                "Critical error during conversion of enriched event to the atomic format"
               )
             ),
             List(EnrichmentFailure(None, FailureDetails.EnrichmentFailureMessage.Simple(err.getMessage)))
@@ -125,8 +125,7 @@ object EnrichmentManager {
                 EnrichmentFailure(
                   None,
                   FailureDetails.EnrichmentFailureMessage.Simple(
-                    s"Enriched event output validation error against the ${atomicSchema.toSchemaUri}. In most cases" +
-                      " it would be because of oversized fields."
+                    s"Enriched event output validation error against the ${atomicSchema.toSchemaUri}."
                   )
                 ),
                 List(EnrichmentFailure(None, FailureDetails.EnrichmentFailureMessage.IgluError(atomicSchema, err)))
