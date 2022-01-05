@@ -90,7 +90,7 @@ object Dependencies {
     val jinJava          = "2.5.0"
 
     val sentry           = "1.7.30"
-    val scio             = "0.11.1"
+    val scio             = "0.11.2"
     val beam             = "2.33.0"
     val grpc             = "1.32.2"
     val macros           = "2.1.1"
